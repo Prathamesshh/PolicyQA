@@ -3,7 +3,7 @@
 
 ---
 
-## Architecture (matches your diagram)
+## Architecture 
 
 ```
 ROW 1 — Document Input & Processing
@@ -54,7 +54,7 @@ brew install tesseract
 ### 2. Train BERT-Large on SQuAD
 
 ```bash
-# Option A: Use HuggingFace SQuAD (downloads automatically)
+# Option A: Use HuggingFace SQuAD 
 
 # Option B: Use YOUR OWN SQuAD-style dataset
 # Edit cfg.custom_data_path in train_bert.ipynb:
@@ -91,14 +91,14 @@ python train_bert.ipynb
 ### 3. Test Document Processing
 
 ```bash
-python document_processor.py ./sample_policy.pdf
+python document_processor.py 
 # Output: chunks with page numbers and text previews
 ```
 
 ### 4. Test RAG Pipeline
 
 ```bash
-python rag_pipeline.py ./sample_policy.pdf
+python rag_pipeline.py 
 # Builds FAISS index, then interactive Q&A loop
 ```
 
@@ -107,7 +107,7 @@ python rag_pipeline.py ./sample_policy.pdf
 ```bash
 python api.py
 # → http://localhost:8000
-# → http://localhost:8000/docs  (Swagger UI)
+# → http://localhost:8000/docs  
 ```
 
 ### 6. Start the UI
@@ -156,9 +156,9 @@ System status + index info.
 ## Model Configuration
 
 ### QA Model (BERT-Large)
-Edit `QATrainingConfig` in `train_bert_qa.py`:
+Edit `QATrainingConfig` in `train_bert.ipynb`:
 ```python
-model_name = "bert-large-uncased-whole-word-masking"  # default
+model_name = "bert-large-uncased-whole-word-masking"  
 # Alternatives:
 # "deepset/roberta-large-squad2"     — slightly better F1
 # "deepset/deberta-v3-large-squad2"  — best performance, slower
