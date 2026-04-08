@@ -1,6 +1,8 @@
 # PolicyQA: Enterprise-Grade Document Intelligence System
 ## BERT-Large Fine-tuned QA + RAG with Multilingual Support
 
+**Author**: Prathamesh ([@prathamesshh](https://github.com/prathamesshh))
+
 *A production-ready ML pipeline for policy document analysis, combining state-of-the-art NLP models with retrieval-augmented generation (RAG) for accurate question-answering and document summarization.*
 
 ---
@@ -906,3 +908,9 @@ async def ask_question(request: Request, req: QuestionRequest):
 **Project Version**: 2.0
 **Last Updated**: 2026-04-08
 **Status**: Production-Ready
+
+## 👤 Author & Maintainer
+
+**Prathamesh** - [@prathamesshh](https://github.com/prathamesshh)
+
+For issues, contributions, or questions, please visit the [GitHub repository](https://github.com/prathamesshh/PolicyQA).
