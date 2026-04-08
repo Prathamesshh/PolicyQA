@@ -1,0 +1,37 @@
+torch>=2.0.0
+transformers>=4.35.0
+datasets>=2.14.0
+accelerate>=0.24.0
+evaluate>=0.4.0
+
+# Document processing
+PyPDF2>=3.0.0
+pdfplumber>=0.10.0
+Pillow>=10.0.0
+pytesseract>=0.3.10
+python-docx>=1.1.0
+
+# RAG & Vector Search
+faiss-cpu>=1.7.4
+sentence-transformers>=2.2.2
+
+# Summarization & Translation
+sentencepiece>=0.1.99
+sacremoses>=0.1.1
+langdetect>=1.0.9
+
+# API
+fastapi>=0.104.0
+uvicorn>=0.24.0
+python-multipart>=0.0.6
+
+# UI
+streamlit>=1.30.0
+
+# Utilities
+numpy>=1.24.0
+pandas>=2.0.0
+tqdm>=4.66.0
+loguru>=0.7.2
+python-dotenv>=1.0.0
+requests>=2.31.0
