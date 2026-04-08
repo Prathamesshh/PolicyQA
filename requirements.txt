@@ -27,6 +27,7 @@ python-multipart>=0.0.6
 
 # UI
 streamlit>=1.30.0
+streamlit-extras>=0.3.0
 
 # Utilities
 numpy>=1.24.0

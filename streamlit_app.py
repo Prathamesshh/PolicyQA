@@ -1,10 +1,11 @@
 """
 streamlit_app.py — PolicyQA Streamlit Frontend
-Connects to FastAPI backend at localhost:8000
+Connects to FastAPI backend (localhost:8000 or cloud URL)
 Run: streamlit run streamlit_app.py
 """
 
 import time
+import os
 import requests
 from pathlib import Path
 import streamlit as st
@@ -12,7 +13,7 @@ import streamlit as st
 # ─────────────────────────────────────────────
 # CONFIG
 # ─────────────────────────────────────────────
-API_BASE       = "http://localhost:8000"
+API_BASE = os.getenv("API_URL", "http://localhost:8000")  # Cloud or local API
 SUPPORTED_EXTS = ["pdf", "png", "jpg", "jpeg", "tiff", "txt", "docx"]
 
 LANGUAGE_MAP = {

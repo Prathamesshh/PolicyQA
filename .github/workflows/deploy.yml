@@ -1,0 +1,27 @@
+name: Deploy to Cloud
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Run Tests
+      run: |
+        pip install -r requirements.txt
+        # Add pytest here if you have tests
+        # pytest tests/
+
+    - name: Streamlit Cloud Deployment
+      # Auto-deploys via GitHub connection
+
+    - name: Render Deployment
+      env:
+        RENDER_DEPLOY_HOOK: ${{ secrets.RENDER_DEPLOY_HOOK }}
+      run: |
+        curl $RENDER_DEPLOY_HOOK
