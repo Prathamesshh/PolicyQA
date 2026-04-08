@@ -128,13 +128,14 @@ LANGUAGE_NAMES = {
 
 class MultilingualTranslator:
     """
-    Lazy-loads translation pipelines for requested languages.
+    Lazy-loads translation models for requested languages.
     Uses Helsinki-NLP OPUS-MT models (free, offline).
     """
 
     def __init__(self):
-        self._pipelines = {}
-        self._device = 0 if torch.cuda.is_available() else -1
+        self._models = {}
+        self._tokenizers = {}
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"
 
     def translate(self, text: str, target_lang: str) -> str:
         if target_lang == "en":
@@ -143,7 +144,8 @@ class MultilingualTranslator:
             raise ValueError(f"Unsupported language: {target_lang}. "
                              f"Supported: {list(LANGUAGE_MODELS.keys())}")
 
-        pipe = self._get_pipeline(target_lang)
+        tokenizer, model = self._get_model(target_lang)
+
         # Handle long texts by splitting into sentences
         import re
         sentences = re.split(r"(?<=[.!?])\s+", text.strip())
@@ -151,20 +153,32 @@ class MultilingualTranslator:
         for sent in sentences:
             if not sent.strip():
                 continue
-            out = pipe(sent, max_length=512)
-            translated.append(out[0]["translation_text"])
+
+            inputs = tokenizer(sent, return_tensors="pt", truncation=True, max_length=512)
+            inputs = {k: v.to(self.device) for k, v in inputs.items()}
+
+            with torch.no_grad():
+                translated_ids = model.generate(**inputs, max_length=512)
+
+            translated_text = tokenizer.decode(translated_ids[0], skip_special_tokens=True)
+            translated.append(translated_text)
+
         return " ".join(translated)
 
-    def _get_pipeline(self, lang: str):
-        if lang not in self._pipelines:
+    def _get_model(self, lang: str):
+        if lang not in self._models:
             model_name = LANGUAGE_MODELS[lang]
             logger.info(f"Loading translation model: {model_name}")
-            self._pipelines[lang] = pipeline(
-                "translation",
-                model=model_name,
-                device=self._device,
-            )
-        return self._pipelines[lang]
+
+            tokenizer = AutoTokenizer.from_pretrained(model_name)
+            model = AutoModelForSeq2SeqLM.from_pretrained(model_name)
+            model = model.to(self.device)
+            model.eval()
+
+            self._models[lang] = model
+            self._tokenizers[lang] = tokenizer
+
+        return self._tokenizers[lang], self._models[lang]
 
     @staticmethod
     def supported_languages() -> dict:
