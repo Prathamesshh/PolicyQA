@@ -41,10 +41,10 @@
     │ 2. FAISS Search     │                          │ 2. Combine Text       │
     │    (Top-5)          │                          │ 3. BART Summarize     │
     │ 3. BERT QA Extraction                          │ 4. Map-Reduce if long │
-    │    from each context │                          │                       │
-    │ 4. Select Best      │                          │                       │
-    │    Answer (highest  │                          │                       │
-    │    confidence score) │                          │                       │
+    │    from each context│                          │                       │
+    │ 4. Return the Answer│                          │                       │
+    │                     │                          │                       │
+    │                     │                          │                       │
     └────┬────────────────┘                          └────────────┬──────────┘
          │                                                        │
          └────────────────┬─────────────────────────────────────┘
@@ -188,8 +188,8 @@ Model: bert-large-uncased-whole-word-masking
 └─ Fine-tuning: SQuAD v2.0 (100k+ QA pairs)
 
 Fine-tuned on SQuAD v2.0:
-├─ Exact Match (EM): ~82-85%
-├─ F1 Score: ~88-90%
+├─ Exact Match (EM): 52-55%
+├─ F1 Score: 50-60%
 └─ Training: 3 epochs, batch_size=8, warmup=500 steps
 ```
 
@@ -199,16 +199,16 @@ Fine-tuned on SQuAD v2.0:
   │      │       │      │
   └──────┴───────┴──────┘
          ↓
-   BERT Encoder (24 layers)
+   BERT Encoder 
          ↓
   ┌─────────────────┐
   │ Answer Start    │
-  │ Predictor Head  │─→ Returns logit for each token (which token starts answer?)
+  │ Predictor Head  │─→ Returns logit for each token 
   └─────────────────┘
 
   ┌─────────────────┐
   │ Answer End      │
-  │ Predictor Head  │─→ Returns logit for each token (which token ends answer?)
+  │ Predictor Head  │─→ Returns logit for each token 
   └─────────────────┘
 ```
 
@@ -723,9 +723,8 @@ embed_model = "sentence-transformers/all-MiniLM-L6-v2"  # 22M params vs 110M
 
 | Metric | Value | Interpretation |
 |---|---|---|
-| **Exact Match (EM)** | 84% | Predicted answer exactly matches reference |
-| **F1 Score** | 89% | Token-level overlap between pred & reference |
-| **Mean Confidence** | 0.76 | Average softmax score across predictions |
+| **Exact Match (EM)** | 54% | Predicted answer exactly matches reference |
+| **F1 Score** | 52% | Token-level overlap between pred & reference |
 
 ### **End-to-End Latency**
 
@@ -748,133 +747,6 @@ Can scale to 100s/sec with multi-GPU setup
 
 ---
 
-## 🏭 Production Deployment
-
-### **1. Docker Containerization**
-
-```dockerfile
-FROM pytorch/pytorch:2.0-cuda11.8-runtime-ubuntu22.04
-
-WORKDIR /app
-COPY requirements.txt .
-RUN pip install -r requirements.txt
-
-# Install Tesseract
-RUN apt-get update && apt-get install -y tesseract-ocr
-
-COPY . .
-
-EXPOSE 8000
-
-CMD ["python", "api.py"]
-```
-
-Build and run:
-```bash
-docker build -t policyqa .
-docker run -p 8000:8000 --gpus all policyqa
-```
-
-### **2. Load Balancing (Gunicorn)**
-
-```bash
-# Install
-pip install gunicorn uvicorn
-
-# Run with 4 workers
-gunicorn api:app \
-  --workers 4 \
-  --worker-class uvicorn.workers.UvicornWorker \
-  --bind 0.0.0.0:8000 \
-  --timeout 120
-```
-
-### **3. Reverse Proxy (Nginx)**
-
-```nginx
-upstream policyqa {
-    server 127.0.0.1:8000;
-    server 127.0.0.1:8001;
-    server 127.0.0.1:8002;
-    server 127.0.0.1:8003;
-}
-
-server {
-    listen 80;
-    server_name api.policyqa.com;
-
-    location / {
-        proxy_pass http://policyqa;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_connect_timeout 60;
-        proxy_send_timeout 120;
-        proxy_read_timeout 120;
-    }
-}
-```
-
-### **4. Caching (Redis)**
-
-```python
-import redis
-
-cache = redis.Redis(host='localhost', port=6379)
-
-@app.post("/ask")
-async def ask_question(req: QuestionRequest):
-    cache_key = f"qa:{hash(req.question)}:{req.language}"
-
-    # Check cache
-    cached = cache.get(cache_key)
-    if cached:
-        return json.loads(cached)
-
-    # Process
-    result = rag_engine.answer(req.question)
-
-    # Cache result (1 hour TTL)
-    cache.setex(cache_key, 3600, json.dumps(result))
-
-    return result
-```
-
-### **5. Security**
-
-```python
-# API Key Authentication
-@app.middleware("http")
-async def verify_api_key(request, call_next):
-    api_key = request.headers.get("Authorization")
-    if not api_key or api_key != os.getenv("API_KEY"):
-        return JSONResponse({"detail": "Unauthorized"}, status_code=401)
-    return await call_next(request)
-
-# Rate Limiting
-from slowapi import Limiter
-
-limiter = Limiter(key_func=get_remote_address)
-
-@app.post("/ask")
-@limiter.limit("10/minute")
-async def ask_question(request: Request, req: QuestionRequest):
-    ...
-```
-
----
-
-## 🐛 Troubleshooting
-
-| Problem | Cause | Solution |
-|---|---|---|
-| Low QA confidence (<0.5) | Poor document-question alignment | Adjust `top_k` (try 10 instead of 5) or improve document chunking |
-| Slow retrieval (>500ms) | Large index or inefficient search | Switch to IVF index for >10k chunks |
-| BERT out of memory | Batch size too large | Reduce batch_size in training config |
-| OCR text missing | Low PDF resolution | Increase DPI to ≥300 in pdfplumber |
-| Translation errors | Sentence too long | Implement additional sentence splitting |
-| High latency (>500ms) | GPU bottleneck | Scale horizontally with multiple GPUs |
-
----
 
 ## 📚 References & Further Reading
 
@@ -887,29 +759,6 @@ async def ask_question(request: Request, req: QuestionRequest):
 - **BART Paper**: https://arxiv.org/abs/1910.13461
 
 ---
-
-## ✅ Production Deployment Checklist
-
-- [ ] Test with real policy documents (>50 documents)
-- [ ] Benchmark latency and accuracy metrics
-- [ ] Add API authentication and rate limiting
-- [ ] Set up Redis caching layer
-- [ ] Configure GPU memory allocations
-- [ ] Implement monitoring (latency, error rates, cache hit ratio)
-- [ ] Set up automated FAISS index backup
-- [ ] Document custom training data format for users
-- [ ] Load test with expected concurrent users (locust/k6)
-- [ ] Set up CI/CD pipeline (GitHub Actions/GitLab CI)
-- [ ] Create runbook for incident response
-- [ ] Document SLA (Service Level Agreement)
-
----
-
-**Project Version**: 2.0
-**Last Updated**: 2026-04-08
-**Status**: Production-Ready
-
-## 👤 Author & Maintainer
 
 **Prathamesh** - [@prathamesshh](https://github.com/prathamesshh)
 
