@@ -51,6 +51,14 @@ st.markdown("""
 html, body, [class*="css"] { font-family: 'Outfit', sans-serif; }
 .stApp { background: #080b10; color: #dde3ee; }
 
+/* Hide/style Streamlit header bar */
+[data-testid="stHeader"] {
+    background: #080b10 !important;
+}
+header { background: #080b10 !important; }
+.appViewContainer { background: #080b10 !important; }
+
+
 /* ── Sidebar ── */
 [data-testid="stSidebar"] {
     background: #0c0f16 !important;
