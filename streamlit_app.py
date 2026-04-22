@@ -344,9 +344,24 @@ div[data-baseweb="select"] > div {
     border-radius: 10px !important;
 }
 .stFileUploader > div {
-    background: #0c1020 !important;
+    background: #080b10 !important;
     border: 2px dashed #162030 !important;
     border-radius: 14px !important;
+}
+.stFileUploader > div > div {
+    background: #080b10 !important;
+}
+.stFileUploader > div > div > div {
+    background: #080b10 !important;
+}
+.stFileUploader > div > div > div > div {
+    background: #080b10 !important;
+}
+/* Target all text in file uploader */
+.stFileUploader p,
+.stFileUploader span,
+.stFileUploader div {
+    color: #8a9ab8 !important;
 }
 .stFileUploader label { color: #4a6a9a !important; }
 
