@@ -60,10 +60,10 @@ class RAGEngine:
         self.index_path.mkdir(parents=True, exist_ok=True)
         self._chunks: List[DocumentChunk] = []
         self._index = None
+        self.embed_model_name = embed_model
 
-        logger.info("Loading sentence-transformer embedding model...")
-        from sentence_transformers import SentenceTransformer
-        self.embedder = SentenceTransformer(embed_model)
+        # Lazy load: embedder set to None, loaded on first embedding call
+        self.embedder = None
 
         model_path = Path(qa_model_path)
         if not model_path.exists():
@@ -77,14 +77,33 @@ class RAGEngine:
             model_id = str(model_path)
 
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        self.qa_tokenizer = AutoTokenizer.from_pretrained(model_id)
-        self.qa_model = AutoModelForQuestionAnswering.from_pretrained(model_id)
-        self.qa_model = self.qa_model.to(self.device)
-        self.qa_model.eval()
+
+        # Store model info for lazy loading
+        self.qa_model_id = model_id
+        self.qa_tokenizer = None
+        self.qa_model = None
+
         self.max_answer_length = max_answer_length
-        logger.success("RAG engine ready.")
+        logger.success("RAG engine ready (BERT & embedder will load on first use).")
+
+    def _load_embedder(self):
+        """Lazy-load embedding model on first use"""
+        if self.embedder is None:
+            logger.info("Loading sentence-transformer embedding model...")
+            from sentence_transformers import SentenceTransformer
+            self.embedder = SentenceTransformer(self.embed_model_name)
+
+    def _load_qa_model(self):
+        """Lazy-load BERT-Large QA model on first use"""
+        if self.qa_model is None:
+            logger.info(f"Loading BERT-Large QA model: {self.qa_model_id}")
+            self.qa_tokenizer = AutoTokenizer.from_pretrained(self.qa_model_id)
+            self.qa_model = AutoModelForQuestionAnswering.from_pretrained(self.qa_model_id)
+            self.qa_model = self.qa_model.to(self.device)
+            self.qa_model.eval()
 
     def build_index(self, chunks: List[DocumentChunk]):
+        self._load_embedder()  # Lazy load on first call
         import faiss
         self._chunks = chunks
         logger.info(f"Embedding {len(chunks)} chunks...")
@@ -126,6 +145,7 @@ class RAGEngine:
             pickle.dump(self._chunks, f)
 
     def retrieve(self, query: str, top_k: Optional[int] = None) -> List[RetrievedContext]:
+        self._load_embedder()  # Lazy load on first call
         k     = top_k or self.top_k
         q_emb = self.embedder.encode([query], normalize_embeddings=True).astype("float32")
         scores, idxs = self._index.search(q_emb, k)
@@ -136,6 +156,7 @@ class RAGEngine:
 
     def _extract_answer(self, question: str, context: str) -> dict:
         """Extract answer from context using BERT QA model."""
+        self._load_qa_model()  # Lazy load on first call
         inputs = self.qa_tokenizer(
             question,
             context,
