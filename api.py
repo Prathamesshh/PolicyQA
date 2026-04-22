@@ -34,27 +34,49 @@ app.add_middleware(
 
 doc_processor  = DocumentProcessor(chunk_size=400, chunk_overlap=50)
 rag_engine: Optional[RAGEngine] = None
-output_handler = OutputHandler(summarizer_model="bart")
+output_handler = None  # Lazy load
 
 UPLOAD_DIR = Path("./uploaded_docs")
 UPLOAD_DIR.mkdir(exist_ok=True)
 
 
 # ──────────────────────────────────────────────────────
-# STARTUP — load ./bert-large + existing FAISS index
+# LAZY LOAD — Models loaded on first request (not startup)
+# ──────────────────────────────────────────────────────
+def get_rag_engine():
+    """Lazy-load RAG engine on first use"""
+    global rag_engine
+    if rag_engine is None:
+        logger.info("Initializing RAG engine (lazy load)...")
+        rag_engine = RAGEngine(qa_model_path="./bert-large", top_k=5)
+
+        # Try loading existing index
+        index_file = Path("./faiss_index/index.faiss")
+        if index_file.exists():
+            try:
+                rag_engine.load_index()
+                logger.success("✓ Loaded existing FAISS index")
+            except Exception as e:
+                logger.warning(f"Could not load index: {e}")
+    return rag_engine
+
+
+def get_output_handler():
+    """Lazy-load output handler on first use"""
+    global output_handler
+    if output_handler is None:
+        logger.info("Initializing output handler (lazy load)...")
+        output_handler = OutputHandler(summarizer_model="bart")
+    return output_handler
+
+
+# ──────────────────────────────────────────────────────
+# STARTUP — Simple health check only
 # ──────────────────────────────────────────────────────
 @app.on_event("startup")
 async def startup_event():
-    global rag_engine
-    # Points to YOUR bert-large folder
-    rag_engine = RAGEngine(qa_model_path="./bert-large", top_k=5)
-    index_file = Path("./faiss_index/index.faiss")
-    if index_file.exists():
-        try:
-            rag_engine.load_index()
-            logger.success("Loaded existing FAISS index on startup.")
-        except Exception as e:
-            logger.warning(f"Could not load index: {e} — waiting for document upload.")
+    logger.info("🚀 PolicyQA API starting...")
+    logger.info("Models will be loaded on first request (lazy loading)")
 
 
 # ──────────────────────────────────────────────────────
@@ -97,11 +119,12 @@ class LanguagesResponse(BaseModel):
 # ── Health ──
 @app.get("/health")
 async def health():
-    indexed = rag_engine._index is not None if rag_engine else False
+    engine = rag_engine
+    indexed = engine._index is not None if engine else False
     return {
         "status": "ok",
         "index_loaded": indexed,
-        "num_chunks": len(rag_engine._chunks) if rag_engine and rag_engine._chunks else 0,
+        "num_chunks": len(engine._chunks) if engine and engine._chunks else 0,
         "model_path": str(Path("./bert-large").resolve()),
     }
 
@@ -109,7 +132,6 @@ async def health():
 # ── Upload + Index (Row 1) ──
 @app.post("/upload", response_model=StatusResponse)
 async def upload_document(file: UploadFile = File(...)):
-    global rag_engine
     allowed = {".pdf", ".png", ".jpg", ".jpeg", ".tiff", ".txt", ".docx"}
     suffix  = Path(file.filename).suffix.lower()
     if suffix not in allowed:
@@ -127,8 +149,9 @@ async def upload_document(file: UploadFile = File(...)):
     if not chunks:
         raise HTTPException(422, detail="No text could be extracted from file.")
 
-    all_chunks = (rag_engine._chunks or []) + chunks
-    rag_engine.build_index(all_chunks)
+    engine = get_rag_engine()  # Lazy load
+    all_chunks = (engine._chunks or []) + chunks
+    engine.build_index(all_chunks)
 
     return StatusResponse(
         status="success",
@@ -140,16 +163,19 @@ async def upload_document(file: UploadFile = File(...)):
 # ── Ask Question (Row 2 — Q&A path) ──
 @app.post("/ask", response_model=QAResponse)
 async def ask_question(req: QuestionRequest):
-    if rag_engine is None or rag_engine._index is None:
+    engine = get_rag_engine()  # Lazy load
+    if engine._index is None:
         raise HTTPException(400, detail="No document indexed yet. Please upload a document first.")
     if not req.question.strip():
         raise HTTPException(400, detail="Question cannot be empty.")
 
-    result = rag_engine.answer(req.question)
+    result = engine.answer(req.question)
     # Remove CID metadata from answer
     clean_answer = re.sub(r'\s*\(\s*cid\s*:\s*\d+\s*\)\s*', ' ', result.answer, flags=re.IGNORECASE).strip()
     clean_context = re.sub(r'\s*\(\s*cid\s*:\s*\d+\s*\)\s*', ' ', result.context, flags=re.IGNORECASE).strip()
-    output = output_handler.get_answer(clean_answer, language=req.language)
+
+    handler = get_output_handler()  # Lazy load
+    output = handler.get_answer(clean_answer, language=req.language)
 
     return QAResponse(
         question=req.question,
@@ -165,13 +191,16 @@ async def ask_question(req: QuestionRequest):
 # ── Summarize (Row 2 — Summary path) ──
 @app.post("/summarize", response_model=SummaryResponse)
 async def summarize_document(req: SummarizeRequest):
-    if rag_engine is None or not rag_engine._chunks:
+    engine = get_rag_engine()  # Lazy load
+    if not engine._chunks:
         raise HTTPException(400, detail="No document indexed yet.")
 
-    full_text = " ".join(c.text for c in rag_engine._chunks[:60])
+    full_text = " ".join(c.text for c in engine._chunks[:60])
     # Remove CID metadata before summarization
     full_text = re.sub(r'\s*\(\s*cid\s*:\s*\d+\s*\)\s*', ' ', full_text, flags=re.IGNORECASE).strip()
-    output    = output_handler.get_summary(full_text, language=req.language)
+
+    handler = get_output_handler()  # Lazy load
+    output = handler.get_summary(full_text, language=req.language)
 
     return SummaryResponse(
         summary=output.content,
@@ -183,7 +212,8 @@ async def summarize_document(req: SummarizeRequest):
 # ── Languages ──
 @app.get("/languages", response_model=LanguagesResponse)
 async def get_languages():
-    return LanguagesResponse(languages=output_handler.available_languages())
+    handler = get_output_handler()  # Lazy load
+    return LanguagesResponse(languages=handler.available_languages())
 
 
 # ──────────────────────────────────────────────────────

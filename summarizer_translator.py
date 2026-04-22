@@ -18,6 +18,7 @@ class PolicySummarizer:
     """
     Abstractive summarisation using BART-large-cnn (default) or T5.
     Handles long documents via chunked summarisation (map-reduce style).
+    Models are lazy-loaded on first use to save memory at startup.
     """
 
     SUPPORTED_MODELS = {
@@ -27,21 +28,27 @@ class PolicySummarizer:
     }
 
     def __init__(self, model_key: str = "bart", device: Optional[int] = None):
-        model_name = self.SUPPORTED_MODELS.get(model_key, model_key)
-        dev = device if device is not None else (0 if torch.cuda.is_available() else -1)
-        logger.info(f"Loading summarization model: {model_name}")
-
-        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
-        self.model = AutoModelForSeq2SeqLM.from_pretrained(model_name)
-
-        if dev >= 0:
-            self.model = self.model.to(f"cuda:{dev}")
-        else:
-            self.model = self.model.to("cpu")
-
-        self.device = "cuda" if dev >= 0 else "cpu"
         self.model_key = model_key
+        self.model_name = self.SUPPORTED_MODELS.get(model_key, model_key)
+        self.device_id = device if device is not None else (0 if torch.cuda.is_available() else -1)
+        self.device = "cuda" if self.device_id >= 0 else "cpu"
         self.max_input_tokens = 1024   # BART limit; T5 can go higher
+
+        # Lazy load: models set to None, loaded on first use
+        self.tokenizer = None
+        self.model = None
+
+    def _load_model(self):
+        """Lazy-load model and tokenizer on first use"""
+        if self.model is None:
+            logger.info(f"Loading summarization model: {self.model_name}")
+            self.tokenizer = AutoTokenizer.from_pretrained(self.model_name)
+            self.model = AutoModelForSeq2SeqLM.from_pretrained(self.model_name)
+
+            if self.device_id >= 0:
+                self.model = self.model.to(f"cuda:{self.device_id}")
+            else:
+                self.model = self.model.to("cpu")
 
     def summarize(
         self,
@@ -54,6 +61,7 @@ class PolicySummarizer:
         Summarize text of any length.
         For long texts: chunk → summarize each → summarize summaries.
         """
+        self._load_model()  # Lazy load on first call
         tokens = self.tokenizer.encode(text, truncation=False)
         if len(tokens) <= self.max_input_tokens:
             return self._summarize_chunk(text, max_length, min_length, num_beams)
